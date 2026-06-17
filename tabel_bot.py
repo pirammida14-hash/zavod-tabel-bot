@@ -375,6 +375,67 @@ async def sozlamalar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(matn)
 
 
+async def xodim_ochir_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_admin(update.effective_user.id):
+        return
+    xodimlar = xodimlar_royxati()
+    if not xodimlar:
+        await update.message.reply_text("⚠️ Xodimlar ro'yxati bo'sh.", reply_markup=admin_keyboard())
+        return ConversationHandler.END
+    tugmalar = []
+    for x in xodimlar:
+        tugmalar.append([InlineKeyboardButton(
+            f"#{x[0]} {x[1]} — {x[2]}",
+            callback_data=f"ochir_{x[0]}"
+        )])
+    tugmalar.append([InlineKeyboardButton("❌ Bekor", callback_data="bekor_ochir")])
+    await update.message.reply_text(
+        "🗑 Qaysi xodimni o'chirmoqchisiz?\n\n"
+        "⚠️ Xodim o'chirilsa tabel ma'lumotlari saqlanib qoladi.",
+        reply_markup=InlineKeyboardMarkup(tugmalar)
+    )
+    return 99
+
+async def xodim_ochir_tasdiqlash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "bekor_ochir":
+        await query.message.reply_text("❌ Bekor qilindi.", reply_markup=admin_keyboard())
+        return ConversationHandler.END
+    xodim_id = int(query.data.split('_')[1])
+    xodim = xodim_olish(xodim_id)
+    if not xodim:
+        await query.message.reply_text("⚠️ Xodim topilmadi.", reply_markup=admin_keyboard())
+        return ConversationHandler.END
+    context.user_data['ochir_id'] = xodim_id
+    context.user_data['ochir_ism'] = xodim[1]
+    await query.message.reply_text(
+        f"⚠️ Tasdiqlang!\n\n"
+        f"👤 {xodim[1]} ({xodim[2]})\n\n"
+        f"Bu xodimni o'chirishni xohlaysizmi?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ha, o'chirish", callback_data="ochir_ha"),
+             InlineKeyboardButton("❌ Yo'q", callback_data="bekor_ochir")]
+        ])
+    )
+    return 100
+
+async def xodim_ochir_bajar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "bekor_ochir":
+        await query.message.reply_text("❌ Bekor qilindi.", reply_markup=admin_keyboard())
+        return ConversationHandler.END
+    xodim_id = context.user_data.get('ochir_id')
+    xodim_ism = context.user_data.get('ochir_ism')
+    xodim_ochirish(xodim_id)
+    await query.message.reply_text(
+        f"✅ {xodim_ism} ro'yxatdan o'chirildi.",
+        reply_markup=admin_keyboard()
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Bekor qilindi.", reply_markup=admin_keyboard())
     context.user_data.clear()
@@ -413,9 +474,20 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    # Xodim o'chirish
+    ochir_conv = ConversationHandler(
+        entry_points=[CommandHandler("xodim_ochir", xodim_ochir_start)],
+        states={
+            99: [CallbackQueryHandler(xodim_ochir_tasdiqlash)],
+            100: [CallbackQueryHandler(xodim_ochir_bajar)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(xodim_conv)
     app.add_handler(tabel_conv)
+    app.add_handler(ochir_conv)
     app.add_handler(CommandHandler("xodim_royxat", xodimlar_menu))
     app.add_handler(MessageHandler(filters.Regex("^👥 Xodimlar$"), xodimlar_menu))
     app.add_handler(MessageHandler(filters.Regex("^📊 Bugungi holat$"), bugungi_holat))
